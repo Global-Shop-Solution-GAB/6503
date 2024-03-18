@@ -1,0 +1,355 @@
+Program.Sub.ScreenSU.Start
+Gui.F_Emails..create
+Gui.F_Emails..caption("Shipping Information")
+Gui.F_Emails..size(4365,2505)
+Gui.F_Emails..position(0,0)
+Gui.F_Emails..event(UnLoad,unload)
+Gui.F_Emails..forecolor(0)
+Gui.F_Emails..BackColor(-2147483633)
+Gui.F_Emails..mousepointer(0)
+Gui.F_Emails..MinX(0)
+Gui.F_Emails..MinY(0)
+Gui.F_Emails.frmMailIDs.create(frame)
+Gui.F_Emails.frmMailIDs.caption("Frame")
+Gui.F_Emails.frmMailIDs.size(3975,1155)
+Gui.F_Emails.frmMailIDs.position(120,225)
+Gui.F_Emails.frmMailIDs.borderstyle(0)
+Gui.F_Emails.lblSender.create(label,"Sender's Email",True,1935,255,1,0,15,True,0,Arial,8,-2147483633,0)
+Gui.F_Emails.lblSender.parent("frmMailIDs")
+Gui.F_Emails.txtSender.create(textbox,"shipping@cardinalsystemsinc.com",True,3795,300,0,0,210,True,0,Arial,8,-2147483643,1)
+Gui.F_Emails.txtSender.parent("frmMailIDs")
+Gui.F_Emails.txtSender.Locked(True)
+Gui.F_Emails.lblRecipients.create(label,"Recipient's Email",True,1935,255,1,0,600,True,0,Arial,8,-2147483633,0)
+Gui.F_Emails.lblRecipients.parent("frmMailIDs")
+Gui.F_Emails.txtRecipients.create(textbox,"",True,3795,300,0,0,795,True,0,Arial,8,-2147483643,1)
+Gui.F_Emails.txtRecipients.parent("frmMailIDs")
+Gui.F_Emails.cmdSend.create(button)
+Gui.F_Emails.cmdSend.caption("Send")
+Gui.F_Emails.cmdSend.size(1005,375)
+Gui.F_Emails.cmdSend.position(120,1470)
+Gui.F_Emails.cmdSend.event(Click,cmdsend_click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+V.Global.sRecipientEmails.Declare(String)
+V.Global.bFound.Declare(Boolean,False)
+V.Global.sShipVia.Declare(String)
+v.Global.sCarrierCode.Declare(String)
+v.Global.sCarrierDesc.Declare(String)
+V.Global.sCustomerNumber.Declare(String)
+V.Global.sShipDate.Declare(String)
+V.Global.sTrackingNo.Declare(String)
+V.Global.sCustomerName.Declare(String)
+V.Global.sOrderNumber.Declare(string)
+V.Global.sCustomerPO.Declare(String)
+V.Global.sPackingList.Declare(String)
+V.Global.sWaybillNumber.Declare(string)
+v.Global.sTrkOpt.Declare(string)
+v.Global.iSoft.Declare(string)
+V.Global.sDefaultSender.Declare
+V.Global.sDefaultRec.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Robert Cole
+'Created: 10/06/2021
+'Modification of ARC 4505.  ASN email is identified by having 'SHIP' in User 16 of the CRM Contact.  Email is generated from New Shipments and Staged Shipments.
+'Requires a VT to install for other customers unless default emails are changed in code below.
+'Modified in a VT for CSI to include default emails for multiple company codes. -SS 2/15/2022
+
+F.Intrinsic.Control.Try
+
+v.local.sSQL.Declare
+v.Local.sTrkOpt.Declare
+
+'If not called from Presave hook on standard shipment or Ship hook on staged shipment, end the process
+F.Intrinsic.Control.If(V.Caller.Hook,<>,28530,and,v.Caller.Hook,<>,38424)
+	F.Intrinsic.Control.End	
+F.Intrinsic.Control.EndIf
+
+F.ODBC.Connection!con.OpenCompanyConnection
+	
+F.Intrinsic.Control.CallSub(SetGlobalVariables)
+
+f.Intrinsic.String.Build("Select MNL_ENTER_TRCKING, rtrim(SHORT_DESC) as C_DESC, SOFTWARE from V_OE_CARRIER where CARRIER_CD = '{0}'",v.Global.sCarrierCode,v.Local.sSQL)
+f.ODBC.Connection!con.ExecuteandReturn(v.Local.sSQL,v.Local.sTrkOpt)
+f.Intrinsic.String.Split(v.Local.sTrkOpt,"*!*",v.Local.sTrkOpt)
+
+f.Intrinsic.Control.If(v.Local.sTrkOpt(0),<>,"")
+	v.Global.sCarrierDesc.Set(v.Local.sTrkOpt(1))
+	v.Global.sTrkOpt.Set(v.Local.sTrkOpt(0))
+	v.Global.iSoft.Set(v.Local.sTrkOpt(2))
+f.Intrinsic.Control.Else
+	v.Global.iSoft.Set(0)
+f.Intrinsic.Control.EndIf
+		
+f.Intrinsic.Control.If(v.Global.sTrackingNo,=,"",and,v.Global.sTrkOpt,=,"Y")
+		f.ODBC.Connection!con.Close
+		f.Intrinsic.Control.End
+f.Intrinsic.Control.EndIf
+		
+F.Intrinsic.Control.CallSub(GetDefaultEmailAddress)	
+Gui.F_Emails.txtRecipients.Text(V.Args.EmailAddress)
+
+Gui.F_Emails..Show
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchError, "Sub", V.Ambient.CurrentSubroutine, "Error", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+
+'Sets the global variables for the program using values from passed variables
+Program.Sub.SetGlobalVariables.Start
+F.Intrinsic.Control.Try
+
+f.Intrinsic.Control.SelectCase(v.Caller.Hook)
+
+'Hook for Shipments New Save Button
+f.Intrinsic.Control.Case("28530")
+	V.Global.sCustomerNumber.Set(V.Passed.000204)
+	V.Global.sShipDate.Set(V.Passed.000206)
+	V.Global.sTrackingNo.Set(V.Passed.000138)
+	V.Global.sShipVia.Set(V.Passed.000180)
+	V.Global.sCarrierCode.Set(v.Passed.000191)
+	V.Global.sCustomerName.Set(V.Passed.000112)
+	V.Global.sCustomerPO.Set(V.Passed.000328)
+	V.Global.sOrderNumber.Set(V.Passed.FIRST-ORDER)
+	V.Global.sWaybillNumber.Set(V.Passed.000178)
+	V.Global.sPackingList.Set(V.Passed.000168)
+
+'Hook for Staged Shipments Ship Button
+f.Intrinsic.Control.Case("38424")
+	V.Global.sCustomerNumber.Set(v.passed.000058)
+	V.Global.sShipDate.Set(v.passed.000038)
+	V.Global.sTrackingNo.Set(v.passed.SHP700S6_000138)
+	V.Global.sShipVia.Set(v.passed.SHP700S6_000180)
+	V.Global.sCarrierCode.Set(v.passed.SHP700S6_000191)
+	v.Global.sCarrierDesc.Set(v.passed.SHP700S6_000192)
+	V.Global.sCustomerName.Set(v.passed.SHP700S4_000022)
+	V.Global.sWaybillNumber.Set(v.Passed.SHP700S6_000178)
+	V.Global.sPackingList.Set(v.passed.000006)
+	f.Intrinsic.Control.CallSub(Get_BDF)
+
+f.Intrinsic.Control.EndSelect
+
+'Company Code
+F.Intrinsic.Control.SelectCase(V.Caller.CompanyCode)
+	F.Intrinsic.Control.Case("FOX")
+		Gui.F_Emails.txtSender.Text("foxshipping@cardinalsystemsinc.com")
+		V.Global.sDefaultSender.Set("foxshipping@cardinalsystemsinc.com*!*CS")
+		V.Global.sDefaultRec.Set("cardinalliners@cardinalsystemsinc.com,foxpoolcustomerservice@cardinalsystemsinc.com")
+		
+	F.Intrinsic.Control.Case("CAN")
+		Gui.F_Emails.txtSender.Text("foxcanada@cardinalsystemsinc.com")
+		V.Global.sDefaultSender.Set("foxcanada@cardinalsystemsinc.com*!*CS")
+		V.Global.sDefaultRec.Set("foxcanada@cardinalsystemsinc.com")
+		
+		
+	F.Intrinsic.Control.Case("CSI")
+		Gui.F_Emails.txtSender.Text("shipping@cardinalsystemsinc.com")
+		V.Global.sDefaultSender.Set("shipping@cardinalsystemsinc.com*!*CS")
+		V.Global.sDefaultRec.Set("customerservice@cardinalsystemsinc.com")
+		
+	F.Intrinsic.Control.CaseElse
+		Gui.F_Emails.txtSender.Text("shipping@cardinalsystemsinc.com")
+		V.Global.sDefaultSender.Set("shipping@cardinalsystemsinc.com*!*CS")
+		V.Global.sDefaultRec.Set("customerservice@cardinalsystemsinc.com")
+		
+F.Intrinsic.Control.EndSelect		
+	
+
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchError, "Sub", V.Ambient.CurrentSubroutine, "Error", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.SetGlobalVariables.End
+
+'Returns the default email address to send to as "EmailAddress"
+Program.Sub.GetDefaultEmailAddress.Start
+F.Intrinsic.Control.Try
+	V.Local.sSQL.Declare(String)
+	V.Local.sDefaultEmail.Declare(String)
+	v.Local.sRet.Declare
+	v.Local.sLine.Declare
+	v.Local.i.Declare
+	
+	f.Intrinsic.Control.If(v.DataTable.dtEmail.Exists,=,true)
+		f.Data.DataTable.Close("dtEmail")
+	f.Intrinsic.Control.EndIf
+	
+'	f.Intrinsic.String.Build("select x.EMAIL1, rtrim(y.UF16) as ASN from V_CONTACT as x left join CRM_UF_VALUE as y on x.CUST = y.COMPID and x.ALT_ID = y.CID where x.PRI_CNTCT = '1' and y.TYPE = '12' and x.CUST = '{0}' and ASN = 'SHIP'",v.Global.sCustomerNumber,v.Local.sSQL)
+	f.Intrinsic.String.Build("select x.EMAIL1, rtrim(y.UF16) as ASN from V_CONTACT as x left join CRM_UF_VALUE as y on x.CUST = y.COMPID and x.ALT_ID = y.CID where y.TYPE = '12' and x.CUST = '{0}' and ASN = 'SHIP'",v.Global.sCustomerNumber,v.Local.sSQL)
+	f.Data.DataTable.CreateFromSQL("dtEmail","con",v.Local.sSQL,true)
+	
+	f.Intrinsic.Control.If(v.DataTable.dtEmail.RowCount,=,0)
+		v.Local.sDefaultEmail.Set(V.Global.sDefaultRec)
+			
+	f.Intrinsic.Control.Else
+		f.Intrinsic.Control.For(v.Local.i,0,v.DataTable.dtEmail.RowCount--,1)
+			f.Intrinsic.Control.If(v.DataTable.dtEmail.RowCount--,=,v.Local.i)
+				f.Intrinsic.String.Build("{0}{1}",v.Local.sDefaultEmail,v.DataTable.dtEmail(v.Local.i).EMAIL1!FieldValTrim,v.Local.sDefaultEmail)
+			f.Intrinsic.Control.Else
+				f.Intrinsic.String.Build("{0}{1},",v.Local.sDefaultEmail,v.DataTable.dtEmail(v.Local.i).EMAIL1!FieldValTrim,v.Local.sDefaultEmail)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.Next(v.Local.i)
+	f.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Variable.AddRV("EmailAddress",V.Local.sDefaultEmail)
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchError, "Sub", V.Ambient.CurrentSubroutine, "Error", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.GetDefaultEmailAddress.End
+
+Program.Sub.cmdsend_click.Start
+F.Intrinsic.Control.Try
+	V.Local.sSubject.Declare(String)
+	V.Local.sBody.Declare(String)
+	V.Local.sSender.Declare(String)
+	V.Local.sRecipientEmails.Declare(String)
+	V.Local.iCurrentEmail.Declare(String)
+	V.Local.iUserID.Declare(Long)
+	
+	f.Intrinsic.Control.If(v.Screen.F_Emails!txtSender.Text,=,"")
+		V.Local.sSender.Set(V.Global.sDefaultSender)
+		'V.Local.sSender.Set("shipping@cardinalsystemsinc.com*!*CS")
+    f.Intrinsic.Control.Else
+        f.Intrinsic.String.Build("{0}*!*CS",v.Screen.F_Emails!txtSender.Text,v.Local.sSender)
+    f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Global.iSoft,<>,0)
+		v.Global.sTrkOpt.Set("Y")
+	f.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.If(V.Global.sTrackingNo.Trim,=,"",and,v.Global.sTrkOpt,=,"Y")
+		gui.F_Emails..Enabled(false)
+		f.Intrinsic.Control.CallSub(Tracking_Check)
+		gui.F_Emails..Enabled(true)
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.If(V.Global.sTrackingNo.Trim,=,"")
+		V.Global.sTrackingNo.Set("Tracking information will be provided upon invoicing")		
+	F.Intrinsic.Control.EndIf	
+	
+'	f.Intrinsic.Control.If(v.Global.sWaybillNumber,<>,"")
+'		F.Intrinsic.String.Build("Customer Name: {1}{0}Customer PO: {2}{0}CS Sales Order #: {3}{0}Packing List #: {4}{0}Tracking Details (Carrier: {5}, Tracking #: {6}, Waybill #: {7}){0}Shipped Date: {8}",V.Ambient.NewLine,V.Global.sCustomerName,V.Global.sCustomerPO,V.Global.sOrderNumber,V.Global.sPackingList,v.Global.sCarrierDesc,V.Global.sTrackingNo,V.Global.sWaybillNumber,V.Global.sShipDate,V.Local.sBody)
+'	f.Intrinsic.Control.Else
+		F.Intrinsic.String.Build("Customer Name: {1}{0}Customer PO: {2}{0}CS Sales Order #: {3}{0}Packing List #: {4}{0}Tracking Details (Carrier: {5}, Tracking #: {6}){0}Shipped Date: {7}",V.Ambient.NewLine,V.Global.sCustomerName,V.Global.sCustomerPO,V.Global.sOrderNumber,V.Global.sPackingList,v.Global.sCarrierDesc,V.Global.sTrackingNo,V.Global.sShipDate,V.Local.sBody)
+'	f.Intrinsic.Control.EndIf
+
+	F.Intrinsic.String.Build("Shipment Tracking Information for {0}",V.Global.sCustomerName,V.Local.sSubject)
+	F.Global.Security.GetUserId(V.Caller.User,V.Caller.CompanyCode,V.Local.iUserID)
+	
+	
+	V.Local.sRecipientEmails.Set(V.Screen.F_Emails!txtRecipients.Text.Trim)
+	
+	F.Intrinsic.String.Split(V.Local.sRecipientEmails,",",V.Local.sRecipientEmails)
+	
+	F.Intrinsic.Control.For(V.Local.iCurrentEmail,V.Local.sRecipientEmails.LBound,V.Local.sRecipientEmails.UBound,1)
+		F.Intrinsic.Control.If(V.Local.sRecipientEmails(V.Local.iCurrentEmail).Trim,<>,"")
+'May need to add a mode in the future.
+			F.Global.Messaging.QueueMessage(V.Caller.CompanyCode,V.Local.iUserID,V.Caller.Caller,V.Local.sSubject,V.Local.sSender,V.Local.sRecipientEmails(V.Local.iCurrentEmail).Trim,V.Local.sBody)
+'Toggle lines for Courier or Outlook compatability.
+'			f.Automation.MSOutlook.QueueEmail(V.Local.sRecipientEmails(V.Local.iCurrentEmail).Trim,v.Local.sSubject,v.Local.sBody)
+		F.Intrinsic.Control.EndIf		
+	F.Intrinsic.Control.Next(V.Local.iCurrentEmail)
+	
+	F.Intrinsic.Control.CallSub(Unload)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchError, "Sub", V.Ambient.CurrentSubroutine, "Error", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdsend_click.End
+
+Program.Sub.unload.Start
+F.Intrinsic.Control.Try
+	
+	F.ODBC.Connection!con.Close
+	F.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchError, "Sub", V.Ambient.CurrentSubroutine, "Error", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.unload.End
+
+Program.Sub.CatchError.Start
+F.Intrinsic.Control.Try
+	V.Local.sErrorMessage.Declare(String)
+	
+	F.Intrinsic.String.Build("Program: GCG_6503_ASN_CRM_Email.g2u{0}{0}Sub: {1}{0}Error: {2}{0}Error Description: {3}",V.Ambient.NewLine,V.Args.Sub,V.Args.Error,V.Args.ErrorDescription,V.Local.sErrorMessage)
+	F.Intrinsic.UI.Msgbox(V.Local.sErrorMessage,"Unhandled Error Occurred")
+	
+	F.Intrinsic.Control.If(V.Args.Sub.UCase,!=,"UNLOAD")
+		F.Intrinsic.Control.CallSub(UnLoad)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.UI.Msgbox("Fatal Error occurred in program GCG_6503_ASN_CRM_Email.g2u","Unhandled Error Occurred")
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry	
+Program.Sub.CatchError.End
+
+Program.Sub.Get_BDF.Start
+v.Local.sBDFRet.Declare
+v.Local.sSQL.Declare
+v.Local.sRet.Declare
+
+'f.Intrinsic.BDF.Load("AUX001","AUX001")
+'f.Intrinsic.BDF.ReadRow("AUX001",0,v.Local.sBDFRet)
+'f.Intrinsic.String.Split(v.Local.sBDFRet,"|~|",v.Local.sBDFRet)
+
+'V.Global.sOrderNumber.Set(v.Local.sBDFRet(1))
+
+f.Intrinsic.String.Build("select distinct ORDER_NO from V_SHIPMENT_HEADER where PCK_NO LIKE '%{0}'",v.Global.sPackingList,v.Local.sSQL)
+f.ODBC.Connection!con.ExecuteandReturn(v.Local.sSQL,v.Local.sRet)
+
+v.Global.sOrderNumber.Set(v.Local.sRet)
+
+f.Intrinsic.String.Build("Select CUSTOMER_PO from V_ORDER_HEADER where ORDER_NO = '{0}'",v.Global.sOrderNumber,v.Local.sSQL)
+f.ODBC.Connection!con.ExecuteandReturn(v.Local.sSQL,v.Local.sRet)
+V.Global.sCustomerPO.Set(v.local.sRet)
+Program.Sub.Get_BDF.End
+
+Program.Sub.Tracking_Check.Start
+v.Local.i.Declare
+v.Local.sMsgRet.Declare
+v.Local.sSQL.Declare
+
+v.Local.i.Set(1)
+
+f.Intrinsic.String.Build("Select rtrim(TRACKING_NO) from V_SHIPMENT_HEADER where PCK_NO LIKE '%{0}'",v.Global.sPackingList,v.Local.sSQL)
+
+f.Intrinsic.Control.DoUntil(v.Global.sTrackingNo,<>,"",or,v.Local.i,=,5)
+
+f.ODBC.Connection!con.ExecuteandReturn(v.Local.sSQL,v.Global.sTrackingNo)
+f.Intrinsic.Math.Add(v.Local.i,1,v.Local.i)
+
+f.Intrinsic.Control.If(v.Global.sTrackingNo,=,"")
+	f.Intrinsic.UI.Sleep(3)
+f.Intrinsic.Control.EndIf
+
+f.Intrinsic.Control.Loop
+
+f.Intrinsic.Control.If(v.Local.i,=,5,and,v.Global.sTrackingNo,=,"")
+	f.Intrinsic.UI.Msgbox("No tracking number found.  Do you want to send without tracking information?","WARNING!",4,v.Local.sMsgRet)
+	f.Intrinsic.Control.If(v.Local.sMsgRet,=,v.Ambient.MsgBoxYes)
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.Else
+		f.Intrinsic.Control.CallSub(Tracking_Check)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndIf
+Program.Sub.Tracking_Check.End
+
+Program.Sub.Comments.Start
+${$0$}$ATG_EMR_Shipments.$}$CHANDANA$}$2/8/2012$}$False
+${$1$}$$}$$}$0$}$28530$}$Pre-Save Hook$}$2/8/2012 7:55:23 AM$}$(Program: ORD0FSGI; Screen: OES0FSN)
+
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$Quote Number: 3236
+Customer Name: EMR Corporation
+Contact Name: Lorraine Lively
+Title: Email upon Shipment
+
+Program.Sub.Comments.End
